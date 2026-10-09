@@ -472,3 +472,48 @@ test("S: explicit muse adapter never relabels foreign source types as Muse captu
     );
   }
 });
+
+test("G4: duplicate state ids are a structured error", () => {
+  const dir = shotDir();
+  const dup = {
+    version: 1,
+    source: { type: "agent-browser", agent: "muse" },
+    viewport: { width: 1280, height: 800 },
+    states: [
+      { id: "home", screenshot: "a.png" },
+      { id: "home", screenshot: "b.png" },
+    ],
+    actions: [],
+  };
+  const v = validateReconstructionInput(dup, dir);
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some((e) => e.code === "DUPLICATE_STATE_ID"));
+});
+
+test("G5: empty states array is a structured error", () => {
+  const dir = shotDir();
+  const empty = {
+    version: 1,
+    source: { type: "agent-browser", agent: "muse" },
+    viewport: { width: 1280, height: 800 },
+    states: [],
+    actions: [],
+  };
+  const v = validateReconstructionInput(empty, dir);
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some((e) => e.code === "EMPTY_STATES"));
+});
+
+test("G6: non-object source is a structured error", () => {
+  const dir = shotDir();
+  const bad = {
+    version: 1,
+    source: "muse",
+    viewport: { width: 1280, height: 800 },
+    states: [{ id: "home", screenshot: "a.png" }],
+    actions: [],
+  };
+  const v = validateReconstructionInput(bad, dir);
+  assert.equal(v.ok, false);
+  assert.ok(v.errors.some((e) => e.code === "INVALID_SOURCE"));
+});

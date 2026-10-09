@@ -525,3 +525,89 @@ test("contradictory loudness config warns without failing", () => {
   assert.equal(plan.errors.length, 0);
   assert.ok(plan.warnings.some((w) => w.code === "LOUDNESS_TARGET_ABOVE_PEAK"));
 });
+
+test("narration clip without a state reference is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  (trace.narration![0] as { state: string }).state = "";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "NARRATION_MISSING_STATE"));
+});
+
+test("narration clip without an audio file is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  (trace.narration![0] as { audio: string }).audio = "";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "NARRATION_MISSING_AUDIO"));
+});
+
+test("undecodable narration file is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  writeFileSync(join(dir, "audio", "narration", "broken.mp3"), "this is not audio data");
+  trace.narration![0].audio = "audio/narration/broken.mp3";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "AUDIO_UNDECODABLE"));
+});
+
+test("zero-duration narration file is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  // 10 samples at 44.1kHz = 0.23ms, rounds to 0ms: decodes, but carries nothing.
+  const samples = Buffer.alloc(20);
+  const header = Buffer.concat([
+    Buffer.from("RIFF"),
+    Buffer.alloc(4),
+    Buffer.from("WAVEfmt "),
+    Buffer.from([16, 0, 0, 0, 1, 0, 1, 0, 68, 172, 0, 0, 136, 88, 1, 0, 2, 0, 16, 0]),
+    Buffer.from("data"),
+    Buffer.alloc(4),
+  ]);
+  header.writeUInt32LE(36 + samples.length, 4);
+  header.writeUInt32LE(samples.length, 40);
+  writeFileSync(join(dir, "audio", "narration", "empty.wav"), Buffer.concat([header, samples]));
+  trace.narration![0].audio = "audio/narration/empty.wav";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "AUDIO_ZERO_DURATION"));
+});
+
+test("music block without a file is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  (trace.audio!.music as { file: string }).file = "";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "MUSIC_MISSING_FILE"));
+});
+
+test("negative music fade is a structured error", () => {
+  const { dir, trace, manifest } = makeFixture();
+  trace.audio!.music!.fadeInMs = -100;
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.errors.some((x) => x.code === "MUSIC_INVALID_FADE"));
+});
+
+test("narration running past the video end warns", () => {
+  const { dir, trace, manifest } = makeFixture();
+  const videoMs = Math.round(manifest.duration);
+  trace.narration![2].startMs = videoMs - 1000; // 2.5s clip, ends 1.5s past the end
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.warnings.some((x) => x.code === "NARRATION_PAST_VIDEO_END"));
+});
+
+test("overlapping narration clips warn", () => {
+  const { dir, trace, manifest } = makeFixture();
+  trace.narration![0].startMs = 0;    // 2s clip: 0..2000
+  trace.narration![1].startMs = 1000; // 1.5s clip: 1000..2500 — overlaps
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.warnings.some((x) => x.code === "NARRATION_OVERLAP"));
+});
+
+test("unusual but decodable codec warns", () => {
+  const { dir, trace, manifest } = makeFixture();
+  execFileSync(
+    ffmpeg(),
+    ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+      "-i", "sine=frequency=440:duration=2", "-c:a", "mp2",
+      join(dir, "audio", "narration", "odd.mp2")],
+    { stdio: "pipe" },
+  );
+  trace.narration![0].audio = "audio/narration/odd.mp2";
+  const plan = planAudio(trace, manifest, { baseDir: dir });
+  assert.ok(plan.warnings.some((x) => x.code === "AUDIO_CODEC_UNUSUAL"));
+});
