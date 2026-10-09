@@ -1,9 +1,0 @@
-node_modules
-dist
-recordings
-*.log
-*.tgz
-.DS_Store
-.takeone
-.reconstruct
-.visual-qa
