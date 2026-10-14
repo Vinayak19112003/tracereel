@@ -20,6 +20,12 @@ The renderer never sees agent identity. Adapters normalize each agent's trace fo
 
 **Status of integrations:** Muse is the tested reference integration. The architecture is fully generic — Grokbot is a planned/reference integration, and any future agent's traces normalize through the same pipeline with no renderer changes.
 
+## Live demo
+
+See real TraceReel outputs — reconstructed demo videos, no screen recording involved:
+
+**https://vinayak19112003.github.io/tracereel/**
+
 ## Install
 
 ```bash
@@ -198,6 +204,12 @@ npm run visual-qa # render fixtures, diff contact sheets vs baselines (manual ga
 ```
 
 Contributing: [`CONTRIBUTING.md`](CONTRIBUTING.md). Changelog: [`CHANGELOG.md`](CHANGELOG.md).
+
+### TestSprite verification
+
+Every pull request to the `demo` branch (the branch that serves the live demo page) is gated by a TestSprite check. The gate workflow (`.github/workflows/testsprite.yml` on the `demo` branch) publishes the PR's version of the demo page to a per-PR preview URL, then runs the TestSprite suite against that preview. A failing suite fails the check, so a broken demo page cannot merge.
+
+The suite lives in the TestSprite portal and exercises the demo page's key interactions: the hero and gallery videos loading and playing, the navigation anchors, and the copy-install button. The workflow needs a `TESTSPRITE_API_KEY` repo secret and a `TESTSPRITE_PROJECT_ID` repo variable.
 
 ## Origins and attribution
 
