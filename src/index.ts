@@ -129,3 +129,9 @@ export type {
   WaitOptions as TraceWaitOptions,
 } from "./sdk.js";
 export * from "./audio/index.js";
+
+// Backend enhancements: spring physics, hardware encoder detection, CDP agent attachment, and server
+export { criticallyDampedSpring, continuousSpringPath } from "./motion.js";
+export { resolveBestH264Encoder, type EncoderInfo } from "./ffmpeg.js";
+export { connectToCdp } from "./browser.js";
+export { TraceReelServer, startServer, type ServerOptions, type RenderJob } from "./server.js";

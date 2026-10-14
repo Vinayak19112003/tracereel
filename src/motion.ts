@@ -29,6 +29,23 @@ export function cubicBezier(p1x: number, p1y: number, p2x: number, p2y: number) 
   return (x: number) => (x <= 0 ? 0 : x >= 1 ? 1 : sampleY(solveX(x)));
 }
 
+/**
+ * Analytical critically damped harmonic oscillator:
+ * x(t) = 1 - (1 + omega * t) * exp(-omega * t)
+ *
+ * Returns a normalized easing function from [0, 1] -> [0, 1] that exhibits zero
+ * unnatural ringing/overshoot while maintaining natural organic deceleration into the target.
+ */
+export function criticallyDampedSpring(omega = 8.5): (t: number) => number {
+  const norm = 1 - (1 + omega) * Math.exp(-omega);
+  return (t: number) => {
+    if (t <= 0) return 0;
+    if (t >= 1) return 1;
+    const raw = 1 - (1 + omega * t) * Math.exp(-omega * t);
+    return raw / norm;
+  };
+}
+
 const presets: Record<string, (t: number) => number> = {
   linear: (t) => t,
   smooth: cubicBezier(0.4, 0, 0.2, 1),
@@ -37,6 +54,9 @@ const presets: Record<string, (t: number) => number> = {
   easeIn: cubicBezier(0.4, 0, 1, 1),
   // slight overshoot then settle
   spring: cubicBezier(0.34, 1.35, 0.64, 1),
+  // critically damped pure spring physics (no overshoot, smooth settle)
+  criticalSpring: criticallyDampedSpring(8.5),
+  organic: criticallyDampedSpring(7.0),
 };
 
 export function resolveEasing(e: Easing | undefined): (t: number) => number {
@@ -49,8 +69,9 @@ export const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.ma
 export const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 
 /**
- * A gently curved path from a to b. Control point is offset perpendicular to the
- * segment so long moves arc slightly instead of tracking a ruler.
+ * A gently curved path from a to b with physics-based curvature.
+ * Control point is offset perpendicular to the segment so long moves arc slightly
+ * instead of tracking an unnatural ruler line.
  */
 export function curvedPath(a: Point, b: Point, curvature = 0.12): (t: number) => Point {
   const dx = b.x - a.x, dy = b.y - a.y;
@@ -64,6 +85,55 @@ export function curvedPath(a: Point, b: Point, curvature = 0.12): (t: number) =>
     x: (1 - t) * (1 - t) * a.x + 2 * (1 - t) * t * c.x + t * t * b.x,
     y: (1 - t) * (1 - t) * a.y + 2 * (1 - t) * t * c.y + t * t * b.y,
   });
+}
+
+/**
+ * Velocity-continuous spring trajectory between multiple points.
+ * Ensures multi-step agent actions maintain momentum through intermediate milestones
+ * without unnatural stutter or robotic dead stops.
+ */
+export function continuousSpringPath(
+  points: Point[],
+  omega = 8.5
+): (t: number) => Point {
+  if (points.length === 0) return () => ({ x: 0, y: 0 });
+  if (points.length === 1) return () => ({ ...points[0] });
+  if (points.length === 2) {
+    const curve = curvedPath(points[0], points[1]);
+    const springEase = criticallyDampedSpring(omega);
+    return (t) => curve(springEase(t));
+  }
+
+  // Calculate segment lengths
+  const segmentDists: number[] = [];
+  let totalDist = 0;
+  for (let i = 0; i < points.length - 1; i++) {
+    const d = Math.hypot(points[i + 1].x - points[i].x, points[i + 1].y - points[i].y);
+    segmentDists.push(d);
+    totalDist += d;
+  }
+
+  const springEase = criticallyDampedSpring(omega);
+
+  return (t: number) => {
+    const easedT = springEase(clamp(t, 0, 1));
+    const targetDist = easedT * totalDist;
+    let accumulated = 0;
+
+    for (let i = 0; i < segmentDists.length; i++) {
+      const segLen = segmentDists[i];
+      if (accumulated + segLen >= targetDist || i === segmentDists.length - 1) {
+        const segT = segLen > 0 ? (targetDist - accumulated) / segLen : 1;
+        const p0 = points[i];
+        const p1 = points[i + 1];
+        const curve = curvedPath(p0, p1, 0.08);
+        return curve(segT);
+      }
+      accumulated += segLen;
+    }
+
+    return { ...points[points.length - 1] };
+  };
 }
 
 /** Small deterministic PRNG so jitter is reproducible per scenario. */

@@ -171,6 +171,8 @@ export interface IdleTrimConfig {
 export interface BrowserConfig {
   /** Path to a Chromium/Chrome executable. Defaults to the Playwright-managed Chromium. */
   executablePath?: string;
+  /** Attach directly to an already-running AI agent browser session via CDP (port or URL). */
+  cdp?: string | number;
   /** Run with a visible window (only useful on machines with a display). Default false. */
   headless: boolean;
   /** Playwright storage state (cookies, localStorage, IndexedDB) file or object. */

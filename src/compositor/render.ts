@@ -5,7 +5,7 @@ import { chromium, type Browser } from "playwright";
 import type { RecordingManifest, ScenarioConfig, UserScenarioConfig } from "../types.js";
 import { resolveConfig, resolveCursorSize } from "../config.js";
 import { ensureChromium, resolveExecutablePath } from "../browser.js";
-import { spawnFfmpeg, runFfmpeg } from "../ffmpeg.js";
+import { spawnFfmpeg, runFfmpeg, resolveBestH264Encoder } from "../ffmpeg.js";
 import { clamp } from "../motion.js";
 import { compositorHtml } from "./page.js";
 import { buildTimeline, cameraBusyWindows, outToSource, sourceToOutput, rateAtSource, planCamera, makeCameraEvaluator, extractCursor, planKeyToasts, type CameraKeyframe, type CameraState, type KeptRange } from "./plan.js";
@@ -183,9 +183,11 @@ export async function renderRecording(opts: RenderOptions): Promise<RenderResult
   };
   const lossless = cfg.output.lossless;
   const isWebm = cfg.output.format === "webm";
+  const bestH264 = isWebm ? null : resolveBestH264Encoder(cfg.output.crf);
+  if (bestH264?.isHardware) log(`Using hardware encoder: ${bestH264.description}`);
   const encoderArgs = isWebm
     ? ["-c:v", "libvpx-vp9", "-b:v", "0", "-crf", String(cfg.output.crf), "-row-mt", "1", "-threads", "2"]
-    : ["-c:v", "libx264", "-preset", "medium", "-crf", String(cfg.output.crf), "-pix_fmt", "yuv420p", "-threads", "2"];
+    : bestH264!.args;
 
   const start = Date.now();
   let done = 0;

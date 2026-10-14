@@ -15,6 +15,8 @@ export function resolveExecutablePath(cfg: BrowserConfig): string | undefined {
 
 /** Make sure the Playwright-managed Chromium exists, downloading it if needed. */
 export function ensureChromium(cfg: BrowserConfig, log: (s: string) => void = () => {}) {
+  // If we are connecting to an existing AI agent browser via CDP, no Chromium download is required
+  if (cfg.cdp || process.env.TRACEREEL_CDP_URL || process.env.CDP_URL) return;
   if (resolveExecutablePath(cfg)) return;
   const managed = chromium.executablePath();
   if (managed && existsSync(managed)) return;
@@ -52,9 +54,48 @@ export interface LaunchedBrowser {
   browser?: Browser;
   context: BrowserContext;
   close: () => Promise<void>;
+  isAttached?: boolean;
+}
+
+/**
+ * Connect directly to an already-running AI agent browser session via CDP.
+ * Supports:
+ * - A port number (e.g. 9222) -> http://127.0.0.1:9222
+ * - A full HTTP or WebSocket CDP URL (e.g. http://localhost:9222 or ws://...)
+ *
+ * TraceReel never launches a new Chromium instance when attaching to an active agent session,
+ * preserving cookies, tabs, logins, and viewport state.
+ */
+export async function connectToCdp(endpoint: string | number, cfg: BrowserConfig): Promise<LaunchedBrowser> {
+  const url = typeof endpoint === "number" || /^\d+$/.test(String(endpoint).trim())
+    ? `http://127.0.0.1:${endpoint}`
+    : String(endpoint).trim();
+
+  const browser = await chromium.connectOverCDP(url);
+  const contexts = browser.contexts();
+  const context = contexts[0] ?? (await browser.newContext().catch(() => undefined));
+  if (!context) throw new Error(`Agent browser at ${url} has no accessible browser context.`);
+  context.setDefaultTimeout(cfg.timeout);
+
+  return {
+    browser,
+    context,
+    isAttached: true,
+    close: async () => {
+      // Detach only; NEVER close or terminate the agent's main browser
+      await browser.close().catch(() => {});
+    },
+  };
 }
 
 export async function launchBrowser(cfg: BrowserConfig, viewport: ViewportConfig, log?: (s: string) => void): Promise<LaunchedBrowser> {
+  // Check if an AI agent main browser CDP endpoint was provided in config or env
+  const cdpEndpoint = cfg.cdp ?? process.env.TRACEREEL_CDP_URL ?? process.env.CDP_URL;
+  if (cdpEndpoint) {
+    log?.(`Connecting directly to agent browser over CDP at ${cdpEndpoint}...`);
+    return connectToCdp(cdpEndpoint, cfg);
+  }
+
   ensureChromium(cfg, log);
   const executablePath = resolveExecutablePath(cfg);
   const args = [
@@ -87,7 +128,7 @@ export async function launchBrowser(cfg: BrowserConfig, viewport: ViewportConfig
     context.setDefaultTimeout(cfg.timeout);
     await context.addInitScript(NAME_HELPER_SCRIPT);
     if (cfg.sameTabLinks) await context.addInitScript(sameTab);
-    return { context, close: () => context.close() };
+    return { context, close: () => context.close(), isAttached: false };
   }
 
   const browser = await chromium.launch({ headless: cfg.headless, executablePath, args });
@@ -101,6 +142,7 @@ export async function launchBrowser(cfg: BrowserConfig, viewport: ViewportConfig
   return {
     browser,
     context,
+    isAttached: false,
     close: async () => {
       await context.close().catch(() => {});
       await browser.close().catch(() => {});
@@ -113,11 +155,7 @@ export async function launchBrowser(cfg: BrowserConfig, viewport: ViewportConfig
  * returned handle never closes the browser: the daemon owns its lifetime.
  */
 export async function connectToSession(port: number, cfg: BrowserConfig): Promise<LaunchedBrowser> {
-  const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
-  const context = browser.contexts()[0];
-  if (!context) throw new Error(`Session on port ${port} has no browser context.`);
-  context.setDefaultTimeout(cfg.timeout);
-  return { browser, context, close: async () => { await browser.close().catch(() => {}); } };
+  return connectToCdp(port, cfg);
 }
 
 export function chromiumInfo(cfg: BrowserConfig): { path: string; version?: string } {

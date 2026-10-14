@@ -69,3 +69,99 @@ export function runFfmpeg(args: string[]): Promise<void> {
   const p = spawnFfmpeg(args);
   return p.end().then(() => p.done);
 }
+
+export interface EncoderInfo {
+  name: string;
+  args: string[];
+  isHardware: boolean;
+  description: string;
+}
+
+let cachedEncoder: EncoderInfo | undefined;
+
+/**
+ * Probe and return the best available H.264 video encoder.
+ * Checks for hardware encoders (VideoToolbox on macOS, NVENC on NVIDIA, QSV/VAAPI on Linux/Intel),
+ * verifying functionality with a zero-length test frame, and falling back to libx264.
+ */
+export function resolveBestH264Encoder(crf = 18): EncoderInfo {
+  if (cachedEncoder) return cachedEncoder;
+
+  const envOverride = process.env.TRACEREEL_ENCODER;
+  if (envOverride) {
+    cachedEncoder = {
+      name: envOverride,
+      args: ["-c:v", envOverride],
+      isHardware: envOverride !== "libx264",
+      description: `Manual override (${envOverride})`,
+    };
+    return cachedEncoder;
+  }
+
+  const bin = resolveFfmpeg();
+  let encoderList = "";
+  try {
+    encoderList = execFileSync(bin, ["-encoders"], { encoding: "utf8" });
+  } catch {
+    encoderList = "";
+  }
+
+  const candidates = [
+    {
+      name: "h264_videotoolbox",
+      platform: "darwin",
+      args: ["-c:v", "h264_videotoolbox", "-b:v", "12M", "-pix_fmt", "yuv420p"],
+      desc: "Apple VideoToolbox (Hardware accelerated)",
+    },
+    {
+      name: "h264_nvenc",
+      platform: "any",
+      args: ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", String(crf), "-pix_fmt", "yuv420p"],
+      desc: "NVIDIA NVENC (Hardware accelerated)",
+    },
+    {
+      name: "h264_qsv",
+      platform: "any",
+      args: ["-c:v", "h264_qsv", "-global_quality", String(crf), "-pix_fmt", "nv12"],
+      desc: "Intel QuickSync (Hardware accelerated)",
+    },
+    {
+      name: "h264_vaapi",
+      platform: "linux",
+      args: ["-c:v", "h264_vaapi", "-qp", String(crf)],
+      desc: "VA-API (Hardware accelerated)",
+    },
+  ];
+
+  for (const cand of candidates) {
+    if (cand.platform !== "any" && cand.platform !== process.platform) continue;
+    if (!encoderList.includes(cand.name)) continue;
+
+    // Probe if the hardware device is actually initialized and usable
+    try {
+      execFileSync(
+        bin,
+        ["-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.04", ...cand.args, "-f", "null", "-"],
+        { timeout: 3000, stdio: "pipe" }
+      );
+      cachedEncoder = {
+        name: cand.name,
+        args: cand.args,
+        isHardware: true,
+        description: cand.desc,
+      };
+      return cachedEncoder;
+    } catch {
+      // Driver or device not available on this host; try next candidate
+    }
+  }
+
+  // CPU Fallback
+  cachedEncoder = {
+    name: "libx264",
+    args: ["-c:v", "libx264", "-preset", "medium", "-crf", String(crf), "-pix_fmt", "yuv420p", "-threads", "2"],
+    isHardware: false,
+    description: "libx264 CPU (high-fidelity software fallback)",
+  };
+  return cachedEncoder;
+}

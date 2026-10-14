@@ -31,7 +31,7 @@ const require = createRequire(import.meta.url);
 const pkg = require("../package.json");
 const log = (s: string) => console.error(s);
 
-function parseOverrides(o: { config?: string; width?: string; height?: string; fps?: string; viewport?: string; dpr?: string; chromium?: string; headed?: boolean; state?: string; profile?: string }): UserScenarioConfig {
+function parseOverrides(o: { config?: string; width?: string; height?: string; fps?: string; viewport?: string; dpr?: string; chromium?: string; cdp?: string; headed?: boolean; state?: string; profile?: string }): UserScenarioConfig {
   const c: UserScenarioConfig = o.config ? JSON.parse(o.config) : {};
   c.output ??= {};
   c.viewport ??= {};
@@ -46,6 +46,7 @@ function parseOverrides(o: { config?: string; width?: string; height?: string; f
   }
   if (o.dpr) c.viewport.deviceScaleFactor = Number(o.dpr);
   if (o.chromium) c.browser.executablePath = o.chromium;
+  if (o.cdp) c.browser.cdp = o.cdp;
   if (o.headed) c.browser.headless = false;
   if (o.state) c.browser.storageState = resolve(o.state);
   if (o.profile) c.browser.userDataDir = resolve(o.profile);
@@ -129,6 +130,7 @@ const sharedOpts = (cmd: Command) =>
     .option("--height <px>", "output height")
     .option("--fps <n>", "output frame rate")
     .option("--chromium <path>", "Chromium/Chrome executable to use")
+    .option("--cdp <endpoint>", "attach directly to agent's running browser via CDP (port or URL)")
     .option("--headed", "show the browser window")
     .option("--state <file>", "Playwright storage state file (cookies, localStorage, IndexedDB)")
     .option("--profile <dir>", "persistent Chromium user data dir");
@@ -1078,6 +1080,7 @@ program
   .requiredOption("--url <url>", "page to open")
   .option("-o, --out <file>", "state file", "state.json")
   .option("--chromium <path>", "Chromium/Chrome executable to use")
+    .option("--cdp <endpoint>", "attach directly to agent's running browser via CDP (port or URL)")
   .option("--profile <dir>", "persistent Chromium user data dir to reuse")
   .action(async (o) => {
     const cfg = resolveConfig({ browser: { headless: false, executablePath: o.chromium, userDataDir: o.profile } });
@@ -1244,6 +1247,20 @@ THE LOOK (after the export works)
   an existing capture without recording again. For a sharp 4K output, capture at dpr 3.
   Waits play in real time unless wrapped: s.lapse(8, () => ...) or s.trim(() => ...).
 `;
+
+program
+  .command("serve")
+  .description("Start the TraceReel HTTP & live trace ingestion server for AI agent harnesses")
+  .option("-p, --port <number>", "server port", "4100")
+  .option("-h, --host <host>", "server host", "127.0.0.1")
+  .option("--cdp <endpoint>", "default agent browser CDP port or URL (e.g. 9222 or http://127.0.0.1:9222)")
+  .action(async (opts) => {
+    const { startServer } = await import("./server.js");
+    const port = parseInt(opts.port, 10);
+    const host = opts.host;
+    const cdpEndpoint = opts.cdp;
+    await startServer({ port, host, cdpEndpoint });
+  });
 
 program
   .command("mcp")
