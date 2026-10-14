@@ -165,9 +165,15 @@
 
 <script>
 document.getElementById('copy').addEventListener('click', function(){
+  var b = document.getElementById('copy');
   navigator.clipboard.writeText('npm install -g tracereel').then(function(){
-    var b = document.getElementById('copy');
-    b.textContent = 'copied'; setTimeout(function(){ b.textContent = 'copy'; }, 1500);
+    // Persistent feedback: keep "copied" and flag data-copied until the
+    // next click, so the copied state is observable (and re-copying
+    // just confirms it again) instead of vanishing after 1.5s.
+    b.textContent = 'copied';
+    b.setAttribute('data-copied', 'true');
+  }).catch(function(){
+    b.setAttribute('data-copied', 'error');
   });
 });
 </script>
