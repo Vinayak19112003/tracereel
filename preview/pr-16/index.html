@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TraceReel — Turn AI-agent browser traces into polished demo videos</title>
+<meta name="description" content="TraceReel reconstructs smooth 1080p60 demo videos from AI agent browser traces: eased cursor glides, click ripples, per-character typing, captions.">
+<style>
+  :root{
+    --bg:#0b0d12; --bg2:#11141c; --card:#151926; --line:#232839;
+    --txt:#eef1f8; --mut:#9aa3b8; --acc:#7c6cff; --acc2:#4fd1c5;
+  }
+  *{box-sizing:border-box; margin:0; padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg); color:var(--txt); font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif; line-height:1.6; -webkit-font-smoothing:antialiased}
+  a{color:var(--acc2); text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1080px; margin:0 auto; padding:0 24px}
+  nav{position:sticky; top:0; z-index:10; background:rgba(11,13,18,.85); backdrop-filter:blur(10px); border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex; align-items:center; justify-content:space-between; height:60px}
+  .brand{font-weight:800; font-size:20px; letter-spacing:.5px; color:var(--txt); text-decoration:none}
+  .brand span{color:var(--acc)}
+  nav .links a{margin-left:20px; color:var(--mut); font-size:14px}
+  nav .links a:hover{color:var(--txt); text-decoration:none}
+  .hero{padding:72px 0 48px; text-align:center}
+  .pill{display:inline-block; font-size:12px; letter-spacing:2px; text-transform:uppercase; color:var(--acc2); border:1px solid var(--line); border-radius:999px; padding:6px 16px; margin-bottom:24px; background:var(--bg2)}
+  h1{font-size:clamp(34px,6vw,58px); line-height:1.12; font-weight:800; letter-spacing:-1px; margin-bottom:18px}
+  h1 .grad{background:linear-gradient(90deg,var(--acc),var(--acc2)); -webkit-background-clip:text; background-clip:text; color:transparent}
+  .sub{color:var(--mut); font-size:clamp(16px,2.4vw,20px); max-width:680px; margin:0 auto 32px}
+  .cta{display:flex; gap:14px; justify-content:center; flex-wrap:wrap; margin-bottom:44px}
+  .btn{display:inline-block; padding:13px 28px; border-radius:10px; font-weight:700; font-size:15px; text-decoration:none; transition:transform .12s ease}
+  .btn:hover{transform:translateY(-2px); text-decoration:none}
+  .btn.pri{background:linear-gradient(90deg,var(--acc),#9a8cff); color:#fff}
+  .btn.sec{border:1px solid var(--line); color:var(--txt); background:var(--bg2)}
+  .screen{border:1px solid var(--line); border-radius:16px; overflow:hidden; box-shadow:0 30px 80px -20px rgba(124,108,255,.25); background:#000}
+  .screen video{display:block; width:100%; height:auto}
+  .cap{color:var(--mut); font-size:13px; margin-top:12px}
+  section{padding:64px 0}
+  h2{font-size:clamp(26px,4vw,36px); font-weight:800; letter-spacing:-.5px; margin-bottom:12px; text-align:center}
+  .lede{color:var(--mut); text-align:center; max-width:640px; margin:0 auto 40px}
+  .steps{display:grid; grid-template-columns:repeat(3,1fr); gap:20px}
+  .step{background:var(--card); border:1px solid var(--line); border-radius:14px; padding:28px 24px}
+  .step .n{display:inline-flex; align-items:center; justify-content:center; width:36px; height:36px; border-radius:50%; background:linear-gradient(135deg,var(--acc),var(--acc2)); font-weight:800; margin-bottom:16px}
+  .step h3{font-size:18px; margin-bottom:10px}
+  .step p{color:var(--mut); font-size:14.5px}
+  .step code{display:block; margin-top:14px; background:#0a0c10; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:12.5px; color:var(--acc2); overflow-x:auto; white-space:nowrap}
+  .gal{display:grid; grid-template-columns:1fr 1fr; gap:28px}
+  .gcard .screen{box-shadow:0 16px 50px -18px rgba(0,0,0,.7)}
+  .gcard h3{margin:18px 0 6px; font-size:18px}
+  .gcard p{color:var(--mut); font-size:14.5px}
+  .install{background:var(--bg2); border-top:1px solid var(--line); border-bottom:1px solid var(--line); text-align:center}
+  .cmd{display:inline-flex; align-items:center; gap:12px; background:#0a0c10; border:1px solid var(--line); border-radius:12px; padding:16px 22px; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:16px; margin-top:8px}
+  .cmd button{background:var(--card); border:1px solid var(--line); color:var(--txt); border-radius:8px; padding:6px 14px; cursor:pointer; font-size:13px}
+  .cmd button:hover{border-color:var(--acc)}
+  .feats{display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-top:40px}
+  .feat{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:20px; text-align:center}
+  .feat .big{font-size:26px; font-weight:800; color:var(--acc2)}
+  .feat .lbl{color:var(--mut); font-size:13px; margin-top:4px}
+  footer{padding:40px 0; text-align:center; color:var(--mut); font-size:13.5px}
+  footer a{color:var(--mut); margin:0 10px}
+  @media(max-width:760px){ .steps,.gal,.feats{grid-template-columns:1fr} .hero{padding:48px 0 32px} }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap">
+    <a class="brand" href="#">Trace<span>Reel</span></a>
+    <div class="links">
+      <a href="#how">How it works</a>
+      <a href="#gallery-broken">Demos</a>
+      <a href="https://github.com/Vinayak19112003/tracereel">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap">
+    <div class="pill">v0.3.1 &nbsp;·&nbsp; open source &nbsp;·&nbsp; MIT</div>
+    <h1>Turn AI-agent browser traces<br>into <span class="grad">polished demo videos</span></h1>
+    <p class="sub">Live agent footage is jumpy — every pause while the model thinks ends up on camera. TraceReel reconstructs a full recording from your agent's trace: eased 60&nbsp;fps cursor glides, click ripples, per-character typing, captions. 1080p60, honest to the real session.</p>
+    <div class="cta">
+      <a class="btn pri" href="https://github.com/Vinayak19112003/tracereel">View on GitHub</a>
+      <a class="btn sec" href="#install">npm install tracereel</a>
+    </div>
+    <div class="screen">
+      <video src="assets/tour-720p.mp4" poster="assets/poster-tour.jpg" autoplay muted loop playsinline preload="auto"></video>
+    </div>
+    <p class="cap">A real TraceReel output — a GitHub repo tour reconstructed from an agent trace. No screen recording involved.</p>
+  </div>
+</header>
+
+<section id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="lede">Three steps. Your agent drives its real logged-in browser; TraceReel does the cinematography.</p>
+    <div class="steps">
+      <div class="step">
+        <div class="n">1</div>
+        <h3>Capture</h3>
+        <p>Your AI agent drives the browser it actually uses — real logged-in state, not a fresh headless session pretending to be you — saving screenshots plus a state/action trace.</p>
+        <code>tracereel validate trace.json</code>
+      </div>
+      <div class="step">
+        <div class="n">2</div>
+        <h3>Reconstruct</h3>
+        <p>The engine turns the trace into a full recording: eased cursor glides at 60&nbsp;fps, click ripples, per-character typing, settled camera shots, crossfades, caption tracks.</p>
+        <code>tracereel reconstruct trace.json -o demo.mp4</code>
+      </div>
+      <div class="step">
+        <div class="n">3</div>
+        <h3>Ship</h3>
+        <p>Out comes a polished 1080p60 MP4. Add narration and subtitles in one more command. Reconstructed from real screenshots — never a fake live recording.</p>
+        <code>tracereel audio demo.mp4 --subtitles both</code>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="gallery">
+  <div class="wrap">
+    <h2>Real outputs</h2>
+    <p class="lede">Every video below was reconstructed by TraceReel from an agent trace — cursor, clicks, typing and captions all synthesized.</p>
+    <div class="gal">
+      <div class="gcard">
+        <div class="screen">
+          <video src="assets/x-demo-720p.mp4" poster="assets/poster-x.jpg" controls preload="none" playsinline></video>
+        </div>
+        <h3>Agent on X, narrated with captions</h3>
+        <p>An agent opens Explore and searches for AI agents — caption track narrates each beat, cursor glides eased at 60&nbsp;fps.</p>
+      </div>
+      <div class="gcard">
+        <div class="screen">
+          <video src="assets/check-720p.mp4" poster="assets/poster-check.jpg" controls preload="none" playsinline></video>
+        </div>
+        <h3>Verification run</h3>
+        <p>A short check demo — the same pipeline, ten seconds, straight to MP4.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="install" class="install">
+  <div class="wrap">
+    <h2>Get started</h2>
+    <p class="lede">Node ≥ 20, ffmpeg, and a Chromium renderer. Then:</p>
+    <div class="cmd"><span>npm install -g tracereel</span><button id="copy">copy</button></div>
+    <div class="feats">
+      <div class="feat"><div class="big">1080p60</div><div class="lbl">rendered output</div></div>
+      <div class="feat"><div class="big">204</div><div class="lbl">tests passing</div></div>
+      <div class="feat"><div class="big">MIT</div><div class="lbl">open source</div></div>
+      <div class="feat"><div class="big">npm</div><div class="lbl">installs in seconds</div></div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <a href="https://github.com/Vinayak19112003/tracereel">GitHub</a>
+    <a href="https://www.npmjs.com/package/tracereel">npm</a>
+    <a href="https://github.com/Vinayak19112003/tracereel/blob/main/LICENSE">MIT License</a>
+    <p style="margin-top:12px">Built by Vinayak Deshmuk — reconstructed from real screenshots, never a live recording.</p>
+  </div>
+</footer>
+
+<script>
+document.getElementById('copy').addEventListener('click', function(){
+  var b = document.getElementById('copy');
+  navigator.clipboard.writeText('npm install -g tracereel').then(function(){
+    // Persistent feedback: keep "copied" and flag data-copied until the
+    // next click, so the copied state is observable (and re-copying
+    // just confirms it again) instead of vanishing after 1.5s.
+    b.textContent = 'copied';
+    b.setAttribute('data-copied', 'true');
+  }).catch(function(){
+    b.setAttribute('data-copied', 'error');
+  });
+});
+</script>
+</body>
+</html>
