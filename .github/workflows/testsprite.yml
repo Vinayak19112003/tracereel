@@ -35,21 +35,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Rewrite relative asset URLs to the live site so the preview only
-          # needs index.html (videos/posters are unchanged per PR).
-          sed 's#assets/#https://vinayak19112003.github.io/tracereel/assets/#g' index.html > /tmp/preview-index.html
+          # Publish the PR's own page as-is (no URL rewriting) together with
+          # the PR's own assets, so the preview actually tests the PR:
+          # relative asset URLs resolve to preview/pr-N/assets/, not the
+          # live site. Rewriting asset URLs to the live site (the old
+          # behaviour) meant the preview never exercised the PR's files.
           # Publish to preview/pr-N/ on the demo branch, retrying on ref races
           # when two PRs publish at once.
           PUBLISHED=false
           for attempt in 1 2 3; do
             rm -rf /tmp/demo-branch
             git clone --quiet --branch demo --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/demo-branch
+            # Clean snapshot: drop any previous publish of this PR so files
+            # removed by the PR don't linger in the preview.
+            rm -rf "/tmp/demo-branch/preview/pr-${PR_NUMBER}"
             mkdir -p "/tmp/demo-branch/preview/pr-${PR_NUMBER}"
-            cp /tmp/preview-index.html "/tmp/demo-branch/preview/pr-${PR_NUMBER}/index.html"
+            cp index.html "/tmp/demo-branch/preview/pr-${PR_NUMBER}/index.html"
+            cp -r assets "/tmp/demo-branch/preview/pr-${PR_NUMBER}/assets"
             cd /tmp/demo-branch
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add "preview/pr-${PR_NUMBER}/index.html"
+            git add "preview/pr-${PR_NUMBER}"
             git -c core.hooksPath=/dev/null commit -m "Preview for PR #${PR_NUMBER} (TestSprite gate)" || true
             if git push origin demo; then
               PUBLISHED=true
