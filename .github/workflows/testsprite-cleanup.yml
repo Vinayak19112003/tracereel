@@ -1,0 +1,34 @@
+# Removes the per-PR preview deployment (preview/pr-N/ on the demo branch)
+# when a PR targeting demo closes, so previews don't accumulate.
+name: TestSprite preview cleanup
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.base.ref == 'demo' && github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: Remove PR preview
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/demo-branch
+          git clone --quiet --branch demo --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/demo-branch
+          cd /tmp/demo-branch
+          if [ -d "preview/pr-${PR_NUMBER}" ]; then
+            git rm -r --quiet "preview/pr-${PR_NUMBER}"
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git -c core.hooksPath=/dev/null commit -m "Remove preview for closed PR #${PR_NUMBER}"
+            git push origin demo
+          else
+            echo "no preview dir, nothing to clean"
+          fi

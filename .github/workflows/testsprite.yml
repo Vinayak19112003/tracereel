@@ -1,0 +1,97 @@
+# TestSprite PR gate — every PR to the demo branch gets its own preview
+# deployment, and the TestSprite suite runs against that preview (not the
+# live site, which still shows the previous deploy). A failing suite fails
+# the check, so a broken demo page cannot merge.
+#
+# Requires:
+#   - repo secret TESTSPRITE_API_KEY (from the TestSprite dashboard)
+#   - repo variable TESTSPRITE_PROJECT_ID (the TestSprite project for this repo)
+# The suite itself lives in the TestSprite portal, built against the live URL.
+name: TestSprite
+
+on:
+  pull_request:
+    branches: [demo]
+
+permissions:
+  contents: write
+
+jobs:
+  testsprite:
+    name: testsprite
+    runs-on: ubuntu-latest
+    # Fork PRs don't get repo secrets, so the API key would be empty and the
+    # check permanently red. Same-repo branches only.
+    if: ${{ github.event.pull_request.head.repo.full_name == github.repository }}
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Publish PR preview
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Rewrite relative asset URLs to the live site so the preview only
+          # needs index.html (videos/posters are unchanged per PR).
+          sed 's#assets/#https://vinayak19112003.github.io/tracereel/assets/#g' index.html > /tmp/preview-index.html
+          # Publish to preview/pr-N/ on the demo branch, retrying on ref races
+          # when two PRs publish at once.
+          PUBLISHED=false
+          for attempt in 1 2 3; do
+            rm -rf /tmp/demo-branch
+            git clone --quiet --branch demo --depth 1 "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" /tmp/demo-branch
+            mkdir -p "/tmp/demo-branch/preview/pr-${PR_NUMBER}"
+            cp /tmp/preview-index.html "/tmp/demo-branch/preview/pr-${PR_NUMBER}/index.html"
+            cd /tmp/demo-branch
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add "preview/pr-${PR_NUMBER}/index.html"
+            git -c core.hooksPath=/dev/null commit -m "Preview for PR #${PR_NUMBER} (TestSprite gate)" || true
+            if git push origin demo; then
+              PUBLISHED=true
+              break
+            fi
+            echo "push raced, retry $attempt"
+            sleep 5
+          done
+          if [ "$PUBLISHED" != "true" ]; then
+            echo "ERROR: could not publish preview after 3 attempts"
+            exit 1
+          fi
+          cd "$GITHUB_WORKSPACE"
+
+      - name: Wait for preview to serve
+        run: |
+          set -euo pipefail
+          PREVIEW_URL="https://vinayak19112003.github.io/tracereel/preview/pr-${{ github.event.pull_request.number }}/"
+          echo "Waiting for $PREVIEW_URL"
+          for i in $(seq 1 30); do
+            CODE=$(curl -s -o /dev/null -w "%{http_code}" "$PREVIEW_URL" || true)
+            if [ "$CODE" = "200" ]; then
+              echo "preview live after ~$((i * 10))s"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "ERROR: preview never returned 200"
+          exit 1
+
+      - name: Run TestSprite suite against preview
+        env:
+          TESTSPRITE_API_KEY: ${{ secrets.TESTSPRITE_API_KEY }}
+        run: |
+          set -euo pipefail
+          npm install -g @testsprite/testsprite-cli
+          PREVIEW_URL="https://vinayak19112003.github.io/tracereel/preview/pr-${{ github.event.pull_request.number }}/"
+          echo "Testing preview: $PREVIEW_URL"
+          testsprite test run --all \
+            --project "${{ vars.TESTSPRITE_PROJECT_ID }}" \
+            --target-url "$PREVIEW_URL" \
+            --wait --timeout 1200 \
+            --report junit --report-file testsprite-junit.xml \
+            --summary-file testsprite-summary.json \
+            --output json
